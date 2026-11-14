@@ -176,7 +176,7 @@ describe("Prune positive egress allowlist", () => {
     expect(new Headers(options?.headers).get("X-Prune-Cache")).toBe("off");
     expect(options).toMatchObject({
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       cache: "no-store",
     });
     expect(JSON.parse(String(options?.body))).toEqual(expectedRequest);
@@ -701,4 +701,28 @@ describe("authenticated tenant-scoped AI routes", () => {
     });
     expect(transport).not.toHaveBeenCalled();
   });
+});
+
+// Workers support manual redirects; do not follow vendor Location headers.
+it("rejects redirect responses without fetching the redirected host", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://untrusted.invalid" },
+      }),
+  );
+  const events: GuardianAudit[] = [];
+  const result = await pruneGuardian({
+    enabled: true,
+    key: "local-test",
+    transport,
+    audit: async (event) => {
+      events.push(event);
+    },
+  }).draft({ workflow: "careops_followup", language: "en-IN" });
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport.mock.calls[0]?.[1]?.redirect).toBe("manual");
+  expect(result.provider).toBe("local-template");
+  expect(events.at(-1)?.eventType).toBe("UPSTREAM_FAILED");
 });

@@ -212,7 +212,7 @@ export function pruneGuardian(options: GuardianOptions) {
             "X-Prune-Cache": "off",
           },
           body: JSON.stringify(request),
-          redirect: "error",
+          redirect: "manual",
           cache: "no-store",
           signal: AbortSignal.timeout(8000),
         });

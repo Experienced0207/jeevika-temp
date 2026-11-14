@@ -14,6 +14,7 @@ export const integrationMigrationFiles = [
   "backend/migrations/0007_careops_prune_maritime.sql",
   "backend/migrations/0008_prune_audit_receipts.sql",
   "backend/migrations/0009_careops_reviews.sql",
+  "backend/migrations/0010_careops_workflow.sql",
 ] as const;
 
 export function prepareIntegrationMigrations(

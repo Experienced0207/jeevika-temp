@@ -8,13 +8,15 @@ import {
   homeVitalsSchema,
 } from "../../../../packages/shared/contracts";
 import { demoReadings } from "../../../../packages/shared/demo";
-import { type Database, tenantDb } from "../../database";
+import { type CareopsBindings, requireCareops } from "../../careops/config";
+import { reviewDraft } from "../../careops/review";
+import { tenantDb } from "../../database";
 import { careopsRepo } from "../../db/careopsRepo";
 import { careopsReviewRepo, ReviewError } from "../../db/careopsReviewRepo";
 import { tokenHash } from "../../security";
 
 type HomeContext = {
-  Bindings: { DB: Database; ENVIRONMENT: string };
+  Bindings: CareopsBindings;
   Variables: { homeOrg: string; homeActor: { id: string; role: string } };
 };
 export const homeRouter = new Hono<HomeContext>();
@@ -90,6 +92,23 @@ homeRouter.post("/nurse/tasks/:id/status", async (c) => {
     raw = JSON.parse(body);
   } catch {
     throw new HTTPException(422, { message: "Invalid JSON" });
+  }
+  if (
+    typeof raw === "object" &&
+    raw !== null &&
+    "kind" in raw &&
+    raw.kind === "draft_review"
+  ) {
+    requireCareops(c.env, c.get("homeOrg"));
+    return c.json(
+      await reviewDraft(
+        { db: c.env.DB, orgId: c.get("homeOrg") },
+        id,
+        c.get("homeActor").id,
+        c.req.header("Idempotency-Key"),
+        raw,
+      ),
+    );
   }
   const input = careopsReviewInputSchema.parse(raw);
   const result = await careopsReviewRepo({

@@ -1,4 +1,11 @@
 import { Hono } from "hono";
+import type { CareopsBindings } from "./careops/config";
+import { dispatchCareops } from "./careops/dispatch";
+import {
+  callbackRouter,
+  careopsRouter,
+  machineRouter,
+} from "./modules/careops/routes";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -69,7 +76,7 @@ export { ClinicHub } from "./do/ClinicHub";
 export { TriageSession } from "./do/TriageSession";
 export { OrgAudit } from "./do/OrgAudit";
 
-export type Env = {
+export type Env = CareopsBindings & {
   DB: D1Database;
   KV: KVNamespace;
   R2?: R2Bucket;
@@ -409,12 +416,14 @@ export function createIntegrationApp() {
     if (c.req.path === "/api/v1/auth/login") {
       return next();
     }
+    if (c.req.path === "/api/v1/careops/maritime/callback") return next();
     if (c.req.path === "/api/v1/cbc/capabilities") return next();
     if (c.req.path.startsWith("/api/v1/cbc") &&
         (!["development", "test"].includes(c.env.ENVIRONMENT) || c.env.CBC_ENABLED === "false")) {
       throw new HTTPException(503, { message: "CBC clinical workspace is not enabled" });
     }
-    if (!c.req.path.startsWith("/api/v1/encounters") && !c.req.path.startsWith("/api/v1/auth") && !c.req.path.startsWith("/api/v1/cbc") && !c.req.path.startsWith("/api/v1/ai")) {
+    const sessionPaths = ["encounters", "auth", "cbc", "ai", "careops"];
+    if (!sessionPaths.some((path) => c.req.path.startsWith(`/api/v1/${path}`))) {
       return next();
     }
     const authorization = c.req.header("Authorization") ?? "";
@@ -447,6 +456,9 @@ export function createIntegrationApp() {
   integrationApp.get("/api/v1/auth/me", (c) => c.json(c.get("principal")));
   integrationApp.route("/api/v1/cbc", cbcRouter);
   integrationApp.route("/api/v1/ai", aiRouter);
+  integrationApp.route("/api/v1/machine/maritime", machineRouter);
+  integrationApp.route("/api/v1/careops", callbackRouter);
+  integrationApp.route("/api/v1/careops", careopsRouter);
   integrationApp.post("/api/v1/auth/logout", async (c) => {
     const token = c.req.header("Authorization")?.slice(7) ?? "";
     const p = c.get("principal");
@@ -1732,6 +1744,13 @@ app.get("*", async (c) =>
 export { app };
 export default Object.assign(app, {
   async scheduled(_controller: ScheduledController, env: Env) {
+    if (env.ENABLE_SYNTHETIC_CAREOPS_DEMO === "true") {
+      for (const orgId of (env.CAREOPS_SYNTHETIC_ORGS ?? "")
+        .split(",")
+        .filter(Boolean)) {
+        await dispatchCareops(env, orgId, 1);
+      }
+    }
     // Explicit configured tenant inventory: maintenance never issues an unscoped
     // organization-discovery query. R2/cron provisioning is an optional operator step.
     for (const orgId of (env.CBC_MAINTENANCE_ORGS ?? "").split(",").filter(Boolean)) {

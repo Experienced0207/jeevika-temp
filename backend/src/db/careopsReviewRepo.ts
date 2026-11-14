@@ -103,6 +103,19 @@ export function careopsReviewRepo(context: { db: Database; orgId: string }) {
               !!(await prior(id, "approve"));
       if (!allowed)
         throw new ReviewError(409, "Task transition is not permitted");
+      if (input.action === "complete") {
+        const workflow = await db
+          .statement(
+            "SELECT state FROM careops_workflows WHERE org_id = :org AND task_id=?",
+            id,
+          )
+          .first<{ state: string }>();
+        if (workflow && workflow.state !== "APPROVED_TO_SEND")
+          throw new ReviewError(
+            409,
+            "Administrative draft review required before completion",
+          );
+      }
       const nextStatus =
         input.action === "approve"
           ? "in_progress"

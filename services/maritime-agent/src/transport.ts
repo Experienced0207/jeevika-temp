@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns";
 import { request } from "node:https";
 import type { LookupFunction } from "node:net";
@@ -108,6 +109,8 @@ export function createMachineTools(
               "Content-Type": "application/json",
               Accept: "application/json",
               "Idempotency-Key": idempotencyKey,
+              "X-Jeevika-Timestamp": String(Math.floor(Date.now() / 1000)),
+              "X-Jeevika-Nonce": randomUUID(),
             },
           },
           (response) => {

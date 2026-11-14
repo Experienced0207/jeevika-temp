@@ -117,8 +117,18 @@ describe("canonical clinical migration safety", () => {
   it("preserves an upgraded C2 database and its data", () => {
     const value = db();
     const scripts = migrationScripts();
-    for (const sql of scripts.slice(0, -1)) value.raw.exec(sql);
-    const legacyColumns = scripts.at(-1)?.split("-- Human administrative")[0];
+    for (const sql of scripts.slice(
+      0,
+      integrationMigrationFiles.findIndex((path) =>
+        path.endsWith("0009_careops_reviews.sql"),
+      ),
+    ))
+      value.raw.exec(sql);
+    const legacyColumns = scripts[
+      integrationMigrationFiles.findIndex((path) =>
+        path.endsWith("0009_careops_reviews.sql"),
+      )
+    ]?.split("-- Human administrative")[0];
     if (!legacyColumns) throw new Error("Missing compatibility migration");
     value.raw.exec(legacyColumns);
     value.raw.exec(
@@ -136,6 +146,34 @@ describe("canonical clinical migration safety", () => {
     const fresh = db();
     migrateLocal(fresh);
     expect(schema(value)).toEqual(schema(fresh));
+  });
+  it("upgrades a C3 database with persisted approved CareOps data without rewriting legacy rows", async () => {
+    const value = db();
+    for (const sql of migrationScripts().slice(0, -1)) value.raw.exec(sql);
+    await seedDemo(value);
+    value.raw.exec(readFileSync("scripts/seed-demo-p1042.sql", "utf8"));
+    const created = await careopsRepo({ db: value, orgId: "demo" }).record([
+      { sampledAt: "2026-10-08T00:00:00.000Z", value: 150 },
+    ]);
+    if (!created.task) throw new Error("Missing C3 task");
+    await careopsReviewRepo({ db: value, orgId: "demo" }).decide(
+      created.task.id,
+      "nurse",
+      { action: "approve" },
+    );
+    const before = value.raw.prepare("SELECT * FROM careops_tasks").all();
+    migrateLocal(value);
+    migrateLocal(value);
+    expect(value.raw.prepare("SELECT * FROM careops_tasks").all()).toEqual(
+      before,
+    );
+    expect(
+      value.raw.prepare("SELECT COUNT(*) n FROM careops_task_reviews").get(),
+    ).toMatchObject({ n: 1 });
+    expect(
+      value.raw.prepare("SELECT COUNT(*) n FROM careops_workflows").get(),
+    ).toMatchObject({ n: 0 });
+    expect(value.raw.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
   });
   it("fails loudly and rolls back deliberate invalid SQL", () => {
     const value = db();
@@ -158,7 +196,13 @@ describe("canonical clinical migration safety", () => {
   });
   it("rejects incompatible legacy columns rather than masking SQL errors", () => {
     const value = db();
-    for (const sql of migrationScripts().slice(0, -1)) value.raw.exec(sql);
+    for (const sql of migrationScripts().slice(
+      0,
+      integrationMigrationFiles.findIndex((path) =>
+        path.endsWith("0009_careops_reviews.sql"),
+      ),
+    ))
+      value.raw.exec(sql);
     value.raw.exec("ALTER TABLE patients ADD COLUMN phone_hash INTEGER");
     expect(() => migrateLocal(value)).toThrow(
       "Incompatible legacy column patients.phone_hash",
