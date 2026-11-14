@@ -18,3 +18,9 @@ export function sourceSummary(sources: { id: string; text: string }[]) {
     requiresClinicianReview: true,
   };
 }
+
+export {
+  assertSafeForExternalEgress,
+  buildSafeChatRequest,
+} from "./egressSafetyGate";
+export { pruneGuardian, verifyPruneReceipt } from "./pruneGuardian";

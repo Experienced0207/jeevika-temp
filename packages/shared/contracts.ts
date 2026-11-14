@@ -150,6 +150,61 @@ export type PruneReceipt = z.infer<typeof pruneReceiptSchema>;
 export type MaritimeWebhook = z.infer<typeof maritimeWebhookSchema>;
 export type MaritimeCallback = z.infer<typeof maritimeCallbackSchema>;
 
+export const pruneVerificationStatusSchema = z.enum([
+  "VERIFIED_ED25519",
+  "VERIFIED_API",
+  "PRESENT_UNVERIFIED",
+  "MISSING",
+  "NOT_APPLICABLE_BLOCKED",
+  "NOT_APPLICABLE_DISABLED",
+]);
+// Bounded allowlist for proxy receipts, not request/response content. Unsupported
+// provider extensions remain unverified and never go to the verification API.
+const pruneModelSchema = z.enum(["gpt-4o-mini", "gpt-4o"]);
+const pruneCounterSchema = z.number().int().nonnegative().max(10000000);
+const pruneCostSchema = z.number().finite().nonnegative().max(1000000);
+export const pruneMetadataSchema = z.strictObject({
+  cache_hit: z.boolean().optional(),
+  cache_type: z
+    .enum(["off", "none", "miss", "exact", "normalized", "semantic"])
+    .nullable()
+    .optional(),
+  cost_saved: pruneCostSchema.optional(),
+  cost_without_prune_usd: pruneCostSchema.optional(),
+  cost_with_prune_usd: pruneCostSchema.optional(),
+  unique_path_cost_saved_usd: pruneCostSchema.optional(),
+  input_tokens: pruneCounterSchema.optional(),
+  output_tokens: pruneCounterSchema.optional(),
+  original_tokens: pruneCounterSchema.optional(),
+  optimized_tokens: pruneCounterSchema.optional(),
+  tokens_saved: pruneCounterSchema.optional(),
+  optimizations_applied: z
+    .array(z.enum(["template_opt", "schema_compress"]))
+    .max(20)
+    .optional(),
+  shield_canary_injected: z.boolean().optional(),
+  shield_canary_leaked: z.boolean().optional(),
+  route_fallback_used: z.boolean().optional(),
+  model: pruneModelSchema.optional(),
+  original_model: pruneModelSchema.optional(),
+  routed_model: pruneModelSchema.optional(),
+  receipt_request_sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  receipt_request_canonical_version: z.literal("v1").optional(),
+  receipt_signature: z
+    .string()
+    .regex(/^[A-Za-z0-9+/]{86}==$/)
+    .optional(),
+  receipt_signed_at: z.iso.datetime().optional(),
+  receipt_signing_key_id: z
+    .string()
+    .regex(/^[a-f0-9]{8,64}$/)
+    .optional(),
+});
+export type PruneMetadata = z.infer<typeof pruneMetadataSchema>;
+
 export const homeVitalsSchema = z
   .strictObject({
     patientId: z.literal("P-1042").default("P-1042"),

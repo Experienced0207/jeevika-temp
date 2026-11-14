@@ -15,6 +15,7 @@ import { vitalisRouter } from "./modules/vitalis/routes";
 import { patientAuthRouter, patientProfileRouter } from "./modules/patient_auth/routes";
 import { cbcRouter } from "./modules/cbc/routes";
 import { pruneCbcSources } from "./modules/cbc/maintenance";
+import { aiRouter, type PruneBindings } from "./modules/ai/routes";
 import { createApp } from "../../apps/api/app";
 
 import {
@@ -87,7 +88,7 @@ export type Env = {
   GEMINI_API_KEY?: string;
   GROQ_API_KEY?: string;
   ASSETS?: { fetch: (req: Request) => Promise<Response> };
-};
+} & PruneBindings;
 
 export type { Env as IntegrationEnv } from "./context";
 import { tenantDb } from "./db/tenant";
@@ -413,7 +414,7 @@ export function createIntegrationApp() {
         (!["development", "test"].includes(c.env.ENVIRONMENT) || c.env.CBC_ENABLED === "false")) {
       throw new HTTPException(503, { message: "CBC clinical workspace is not enabled" });
     }
-    if (!c.req.path.startsWith("/api/v1/encounters") && !c.req.path.startsWith("/api/v1/auth") && !c.req.path.startsWith("/api/v1/cbc")) {
+    if (!c.req.path.startsWith("/api/v1/encounters") && !c.req.path.startsWith("/api/v1/auth") && !c.req.path.startsWith("/api/v1/cbc") && !c.req.path.startsWith("/api/v1/ai")) {
       return next();
     }
     const authorization = c.req.header("Authorization") ?? "";
@@ -445,6 +446,7 @@ export function createIntegrationApp() {
   });
   integrationApp.get("/api/v1/auth/me", (c) => c.json(c.get("principal")));
   integrationApp.route("/api/v1/cbc", cbcRouter);
+  integrationApp.route("/api/v1/ai", aiRouter);
   integrationApp.post("/api/v1/auth/logout", async (c) => {
     const token = c.req.header("Authorization")?.slice(7) ?? "";
     const p = c.get("principal");
