@@ -1,73 +1,164 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { z } from "zod";
 import { driftRadar } from "../../../../packages/engine";
 import { demoReadings } from "../../../../packages/shared/demo";
+import {
+  driftInputSchema,
+  homeVitalsSchema,
+} from "../../../../packages/shared/contracts";
+import { tenantDb, type Database } from "../../database";
+import { careopsRepo } from "../../db/careopsRepo";
+import { tokenHash } from "../../security";
 
-export const homeRouter = new Hono();
+type HomeContext = {
+  Bindings: { DB: Database; ENVIRONMENT: string };
+  Variables: { homeOrg: string };
+};
+export const homeRouter = new Hono<HomeContext>();
+homeRouter.onError((error, c) => {
+  const status =
+    error instanceof z.ZodError
+      ? 422
+      : error instanceof HTTPException
+        ? error.status
+        : 500;
+  return c.json(
+    {
+      error: {
+        message:
+          status === 500
+            ? "Home persistence failed"
+            : status === 422
+              ? "Invalid request fields"
+              : error.message,
+      },
+    },
+    status,
+  );
+});
+
+// The parent v1 router does not authenticate Home. Resolve tenancy from the
+// stored session rather than trusting request tenant headers or body fields.
+const authenticate: MiddlewareHandler<HomeContext> = async (c, next) => {
+  if (!["development", "test"].includes(c.env?.ENVIRONMENT))
+    throw new HTTPException(503, {
+      message: "Synthetic Home workspace is not enabled",
+    });
+  const authorization = c.req.header("Authorization") ?? "";
+  const token = authorization.startsWith("Bearer ")
+    ? authorization.slice(7)
+    : "";
+  const orgId = token.split(".")[0] ?? "";
+  if (!/^[a-z0-9-]{1,80}$/.test(orgId) || token.length > 300)
+    throw new HTTPException(401, { message: "Session required" });
+  const user = await tenantDb({ db: c.env.DB, orgId })
+    .statement(
+      `SELECT u.role FROM sessions s JOIN users u ON u.org_id=s.org_id AND u.id=s.user_id
+     WHERE s.org_id = :org AND s.token_hash = ? AND s.expires_at > ?`,
+      await tokenHash(token),
+      new Date().toISOString(),
+    )
+    .first<{ role: string }>();
+  if (!user)
+    throw new HTTPException(401, { message: "Session expired or revoked" });
+  if (!["DOCTOR", "NURSE", "HOSPITAL_ADMIN"].includes(user.role))
+    throw new HTTPException(403, { message: "Clinical role required" });
+  c.set("homeOrg", orgId);
+  await next();
+};
+homeRouter.use("/vitals", authenticate);
+homeRouter.use("/nurse/queue", authenticate);
 
 homeRouter.post("/vitals", async (c) => {
-  let readings: Array<{ day: number; value: number }> = demoReadings;
+  const text = await c.req.text();
+  if (text.length > 32000)
+    throw new HTTPException(413, { message: "Request too large" });
+  let raw: unknown = {};
   try {
-    const body = (await c.req.json()) as {
-      readings?: Array<{ day: number; value: number }>;
-      value?: number;
-      systolic?: number;
-      day?: number;
-    };
-    if (body?.readings && Array.isArray(body.readings) && body.readings.length > 0) {
-      readings = body.readings;
-    } else if (typeof body?.systolic === "number" || typeof body?.value === "number") {
-      const val = body.systolic ?? body.value ?? 120;
-      const day = body.day ?? demoReadings.length;
-      readings = [...demoReadings, { day, value: val }];
-    }
+    raw = text ? JSON.parse(text) : {};
   } catch {
-    // If no body provided, use demo baseline
+    throw new HTTPException(422, { message: "Invalid JSON" });
   }
-
-  const driftResult = driftRadar({ readings });
-
+  const input = homeVitalsSchema.parse(raw);
+  const repo = careopsRepo({ db: c.env.DB, orgId: c.get("homeOrg") });
+  if (!(await repo.patientExists()))
+    throw new HTTPException(404, {
+      message: "Synthetic patient not found; apply P-1042 seed",
+    });
+  const atDay = (day: number) =>
+    new Date(Date.UTC(2026, 9, 1) + day * 86400000).toISOString();
+  const value = input.systolic ?? input.value;
+  const readings = input.readings
+    ? input.readings.map((r) => ({ sampledAt: atDay(r.day), value: r.value }))
+    : value !== undefined
+      ? [
+          {
+            sampledAt: input.sampledAt
+              ? new Date(input.sampledAt).toISOString()
+              : input.day !== undefined
+                ? atDay(input.day)
+                : new Date().toISOString(),
+            value,
+          },
+        ]
+      : demoReadings.map((r) => ({ sampledAt: atDay(r.day), value: r.value }));
+  driftInputSchema.parse({
+    readings: readings.map((r) => ({
+      day: Math.floor(Date.parse(r.sampledAt) / 86400000),
+      value: r.value,
+    })),
+  });
+  const result = await repo.record(readings);
   return c.json({
     status: "recorded",
-    readingId: "vit_" + Date.now(),
-    driftDetected: driftResult.alert,
-    drift: driftResult,
-    timestamp: new Date().toISOString()
+    readingId: result.readingId,
+    driftDetected: result.drift.alert || result.task?.priority === "urgent",
+    drift: result.drift,
+    task: result.task,
+    timestamp: new Date().toISOString(),
   });
 });
 
 homeRouter.post("/drift", async (c) => {
-  const body = await c.req.json();
-  return c.json(driftRadar(body));
+  let raw: unknown;
+  try {
+    raw = await c.req.json();
+  } catch {
+    throw new HTTPException(422, { message: "Invalid JSON" });
+  }
+  return c.json(driftRadar(driftInputSchema.parse(raw)));
 });
 
 homeRouter.post("/whatsapp/webhook", async (c) => {
   return c.json({
     status: "dispatched",
-    handled: true
+    handled: true,
   });
 });
 
 homeRouter.get("/nurse/queue", async (c) => {
-  // Execute deterministic drift analysis over longitudinal readings
-  const drift = driftRadar({ readings: demoReadings });
-  const latestTrace = drift.trace.at(-1);
-
+  const tasks = await careopsRepo({
+    db: c.env.DB,
+    orgId: c.get("homeOrg"),
+  }).queue();
   return c.json({
-    queue: [
-      {
-        patientId: "pat_sunita",
-        name: "Sunita Devi",
-        riskScore: latestTrace?.alert ? 0.92 : 0.45,
-        driftDetected: drift.alert,
-        driftReason: drift.alert
-          ? "Systolic BP steady upward drift exceeding CUSUM threshold"
-          : "Vitals stable within baseline",
-        baseline: drift.baseline,
-        sigma: drift.sigma,
-        latestCusum: latestTrace?.cusum ?? 0,
-        lastVitals: { systolic: latestTrace?.value ?? 148, date: "Today" }
-      }
-    ]
+    queue: tasks.map(({ drift, ...task }) => ({
+      ...task,
+      name: "P-1042 • Synthetic patient",
+      riskScore: task.priority === "urgent" ? 1 : 0.92,
+      driftDetected: task.priority === "urgent" || (drift?.alert ?? false),
+      driftReason:
+        task.priority === "urgent"
+          ? "Absolute systolic threshold requires immediate human review"
+          : "Systolic BP upward drift requires human review",
+      baseline: drift?.baseline ?? null,
+      sigma: drift?.sigma ?? null,
+      latestCusum: drift?.trace.at(-1)?.cusum ?? 0,
+      lastVitals: {
+        systolic: drift?.trace.at(-1)?.value ?? null,
+        date: "Today",
+      },
+    })),
   });
 });
-

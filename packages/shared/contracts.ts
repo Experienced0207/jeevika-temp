@@ -91,6 +91,96 @@ export const demandInputSchema = z.object({
   serviceLevel: z.number().min(0.5).max(0.999).default(0.95),
 });
 
+// Version 1 CareOps contracts. External payloads accept only opaque references;
+// strict objects reject clinical text, identifiers, and arbitrary provider data.
+export const careopsTaskStatusSchema = z.enum([
+  "open",
+  "in_progress",
+  "completed",
+  "cancelled",
+]);
+export const careopsTaskSchema = z.strictObject({
+  id: z.uuid(),
+  patientId: z.literal("P-1042"),
+  kind: z.literal("bp_drift"),
+  priority: z.enum(["review", "urgent"]),
+  status: careopsTaskStatusSchema,
+  triggerDay: z.number().int().min(0).max(36500),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type CareopsTask = z.infer<typeof careopsTaskSchema>;
+export const careopsEventSchema = z.strictObject({
+  id: z.uuid(),
+  taskId: z.uuid(),
+  eventType: z.enum([
+    "drift_detected",
+    "prune_receipt",
+    "handoff_received",
+    "handoff_completed",
+  ]),
+  createdAt: z.iso.datetime(),
+});
+export const careopsTriggerSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  triggerId: z.uuid(),
+});
+export const pruneReceiptSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  receiptId: z.uuid(),
+  triggerId: z.uuid(),
+  decision: z.enum(["accepted", "rejected", "human_review"]),
+  policyVersion: z.string().regex(/^[a-zA-Z0-9._-]{1,40}$/),
+  receivedAt: z.iso.datetime(),
+});
+export const maritimeWebhookSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  handoffId: z.uuid(),
+  receiptId: z.uuid(),
+  triggerId: z.uuid(),
+});
+export const maritimeCallbackSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  handoffId: z.uuid(),
+  eventId: z.uuid(),
+  status: z.enum(["accepted", "completed", "failed"]),
+  occurredAt: z.iso.datetime(),
+});
+export type PruneReceipt = z.infer<typeof pruneReceiptSchema>;
+export type MaritimeWebhook = z.infer<typeof maritimeWebhookSchema>;
+export type MaritimeCallback = z.infer<typeof maritimeCallbackSchema>;
+
+export const homeVitalsSchema = z
+  .strictObject({
+    patientId: z.literal("P-1042").default("P-1042"),
+    readings: driftInputSchema.shape.readings.optional(),
+    systolic: z.number().min(60).max(250).optional(),
+    value: z.number().min(60).max(250).optional(),
+    day: z.number().int().min(0).max(36500).optional(),
+    sampledAt: z.iso.datetime().optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (
+      (input.readings &&
+        (input.systolic !== undefined ||
+          input.value !== undefined ||
+          input.day !== undefined ||
+          input.sampledAt !== undefined)) ||
+      (input.systolic !== undefined &&
+        input.value !== undefined &&
+        input.systolic !== input.value) ||
+      (input.day !== undefined && input.sampledAt !== undefined) ||
+      ((input.day !== undefined || input.sampledAt !== undefined) &&
+        input.systolic === undefined &&
+        input.value === undefined)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide one unambiguous reading representation",
+      });
+    }
+  });
+
 /** Collection bundle: FHIR R4 aligned; not an ABDM document or certified profile. */
 export function fhirBundle(patient: Patient, observations: Observation[]) {
   patientSchema.parse(patient);

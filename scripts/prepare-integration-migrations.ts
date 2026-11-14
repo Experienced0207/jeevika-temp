@@ -9,6 +9,7 @@ for (const name of [
   "0002_pharmacy.sql",
   "0002_ayusetu_her.sql",
   "0003_ayusetu_vitalis.sql",
+  "0007_careops_prune_maritime.sql",
 ])
   copyFileSync(`backend/migrations/${name}`, `${destination}/${name}`);
 copyFileSync(

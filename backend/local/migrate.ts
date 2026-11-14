@@ -70,6 +70,7 @@ export function migrationScripts() {
     "0002_ayusetu_her.sql",
     "0003_ayusetu_vitalis.sql",
     "0005_clinic_token_sequences.sql",
+    "0007_careops_prune_maritime.sql",
   ]
     .map((name) => {
       try {
