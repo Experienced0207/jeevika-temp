@@ -1,0 +1,15 @@
+# GitHub Linguist Language Configuration for Jeevika Healthcare
+*.dart linguist-detectable=true
+*.py linguist-detectable=true
+*.sql linguist-detectable=true
+*.ts linguist-detectable=true
+*.tsx linguist-detectable=true
+*.html linguist-detectable=true
+*.css linguist-detectable=true
+
+# Ensure full-stack modules are detected in language stats
+frontend/app/** linguist-vendored=false
+frontend/app/** linguist-documentation=false
+model-api/** linguist-vendored=false
+backend/migrations/** linguist-vendored=false
+apps/web/** linguist-vendored=false
