@@ -1,0 +1,9 @@
+feat(clinical): integrate clinical care workspace, patient kiosk, emergency triage, and pharmacy POS inventory
+
+- Clinical Review Workspace: Doctor consultation portal with SOAP notes, diagnosis coding, vitals evaluation, and digital prescription builder with automated dosage logic
+- Patient Services and Intake: Multilingual patient self-registration kiosk with localized voice input and queue token generation
+- Emergency Department: Rapid acuity triage with ESI acuity scoring and instant doctor assignment
+- Inpatient Management (IPD): Ward bed allocation, admission workflows, and inpatient monitoring
+- Integrative Medicine: AYUSH holistic care consultation (Ayurveda, Yoga, Unani, Siddha, Homeopathy)
+- Pharmacy and Supply Chain: Point of Sale (POS) dispensing with generic drug substitution, FEFO batch expiry control, and central procurement orders
+- Documentation: Updated milestone roadmap marking Milestone 2 (50% project completion)

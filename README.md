@@ -6,11 +6,12 @@
 [![React](https://img.shields.io/badge/Web-React%2018%20%2B%20Vite-149ECA?logo=react&logoColor=white)](frontend/website)
 [![Backend](https://img.shields.io/badge/API-Hono%20%2B%20Cloudflare%20Worker-E36002?logo=hono&logoColor=white)](backend)
 [![TailwindCSS](https://img.shields.io/badge/Design-Tailwind%20CSS-38B2AC?logo=tailwind-css&logoColor=white)](frontend/website/tailwind.config.js)
+[![Progress](https://img.shields.io/badge/Status-50%25%20Completed-blue.svg)](docs/PROGRESS.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**One cohesive operating system connecting hospital governance, clinical oversight, clinic operations, and staff workflows.**
+**One cohesive operating system connecting patient intake, clinical review, inpatient care, pharmacy dispensing, hospital governance, and staff workflows.**
 
-[Architecture](#-system-architecture) • [Features](#-core-operations-modules) • [Tech Stack](#-technology-stack) • [Quick Start](#-quick-start) • [Roadmap](#-milestone-roadmap)
+[Architecture](#-system-architecture) • [Features](#-system-modules) • [Tech Stack](#-technology-stack) • [Quick Start](#-quick-start) • [Roadmap](#-milestone-roadmap)
 
 </div>
 
@@ -18,46 +19,49 @@
 
 ## 📌 Project Overview
 
-**Jeevika Healthcare** is an enterprise-grade hospital operating system designed to eliminate fragmented medical operations. Modern clinics and multi-specialty hospitals often suffer from disjointed handoffs between administrative headquarters, branch clinics, finance, and human resources. 
+**Jeevika Healthcare** is an enterprise-grade hospital operating system designed to eliminate fragmented medical operations. Modern clinics and multi-specialty hospitals often suffer from disjointed handoffs between intake kiosks, doctors, pharmacies, and administrative headquarters. 
 
-Jeevika unites these core administrative operations into a single deterministic, audit-logged multi-tenant platform.
+Jeevika unites the entire continuum of care into a single deterministic, audit-logged multi-tenant platform.
 
 ```mermaid
-flowchart TD
-    HQ["🏥 Hospital Headquarters (Executive Dashboard)"] --> Clinics["🏬 Branch Clinics & Clinic Admin"]
-    Clinics --> Staff["👥 Staff Management & Shift Rosters"]
-    Clinics --> Attendance["⏱️ Duty Attendance Logging"]
-    Clinics --> Finance["💼 CA Financial Suite & General Ledger"]
-    Clinics --> Equipment["🔧 Biomedical Equipment Registry"]
-    Finance --> Invoicing["🧾 GST Tax Invoices & Billing"]
-    HQ --> Audit["🛡️ Tamper-Evident System Audit Logs"]
+flowchart LR
+    P["👤 Patient (Kiosk / Voice Intake)"] --> T["🚨 Emergency Triage & Queue Token"]
+    T --> D["🩺 Doctor Consultation Workspace (SOAP + Rx)"]
+    D --> PH["💊 Pharmacy POS & FEFO Inventory"]
+    D --> IPD["🛏️ IPD Wards & Admissions"]
+    PH --> HQ["🏥 Hospital HQ & CA Financial Ledger"]
+    IPD --> HQ
 ```
 
 ---
 
-## 🚀 Core Operations Modules (Milestone 1)
+## 🚀 System Modules (50% Milestone Complete)
 
-### 1. Multi-Tenant Governance & Command Center
-- **Hospital Headquarters Dashboard (`HospitalDashboard.tsx`)**: Executive bird's-eye view tracking multi-clinic bed capacity, active outpatient queues, revenue streams, and emergency flags.
-- **Clinic Administration (`ClinicAdminDashboard.tsx`)**: Specialized drill-down portal for branch clinic managers to review day-to-day operations and department metrics.
-- **Super Admin Governance (`SuperAdminDashboard.tsx`)**: Network-level oversight across hospital registrations, clinic linkages, and system-wide telemetry.
-- **Hospital Registry & Details (`HospitalsRegistry.tsx`, `HospitalDetails.tsx`)**: Complete catalog and inspection view for multi-facility networks.
+### 1. Patient Front-Office & Emergency Services
+- **Multilingual Patient Kiosk (`PatientKiosk.tsx`)**: Vernacular self-registration, symptom checklist, and real-time patient queue token assignment.
+- **Voice-Assisted Symptom Capture (`VoiceInput.tsx`)**: Speech-to-text recording supporting regional languages for accessible patient onboarding.
+- **Emergency Acuity Triage (`EmergencyTriage.tsx`)**: Acuity level scoring (ESI 1-5), vital parameter screening, and instant priority physician allocation.
 
-### 2. Human Resources & Workforce Management
-- **Staff Portal (`StaffPortal.tsx`)**: Central directory of clinicians, nurses, pharmacists, and administrators with role-based access control (RBAC).
-- **Shift Rostering (`ShiftManagement.tsx`, `HospitalShiftManagement.tsx`)**: Dynamic morning, evening, and night shift scheduling across departments.
-- **Duty Attendance Tracking (`ClinicAttendance.tsx`)**: Real-time staff check-in, presence tracking, and duty logs.
+### 2. Clinical Care & Inpatient Management
+- **Doctor Consultation Workspace (`DoctorConsultation.tsx`)**: Comprehensive clinical portal with live patient queue, subjective/objective assessment (SOAP), diagnosis coding, and digital prescription builder with automated dosage logic.
+- **Inpatient Department (`IPDDashboard.tsx`)**: Real-time bed occupancy matrix, ward allocation, admission/discharge workflows, and inpatient vitals monitoring.
+- **AYUSH Integrative Center (`AyushDashboard.tsx`)**: Holistic medical workflows integrating Ayurveda, Yoga, Unani, Siddha, and Homeopathy treatment protocols.
 
-### 3. Financial Intelligence & Accounting
-- **CA Financial Suite (`CAFinancialSuite.tsx`)**: Comprehensive ledger, trial balance, and balance-sheet generator tailored for chartered accountants.
-- **Earnings & Payouts (`EarningsDashboard.tsx`)**: Transparent revenue share calculations, consultation fees, and doctor disbursements.
-- **Expense Tracking (`ExpensesDashboard.tsx`)**: Clinic-level overheads, operational expenses, and procurement cost monitoring.
-- **GST Invoicing & Billing (`TaxInvoice.tsx`, `BillingOverview.tsx`, `SubscriptionDashboard.tsx`)**: Standardized tax invoices with CGST/SGST breakdowns and subscription billing.
+### 3. Pharmacy, POS & Supply Chain
+- **Pharmacy Point of Sale (`POSDashboard.tsx`)**: Rapid dispensing checkout counter, automated generic drug alternatives, and instant bill generation.
+- **Inventory & FEFO Batch Control (`InventoryDashboard.tsx`)**: First-Expiry-First-Out dispensing logic, low stock alerts, batch expiry forecasting, and stock movements.
+- **Central Procurement (`ProcurementDashboard.tsx`)**: Supplier purchase orders, receiving logs, and hospital vendor management.
+- **Medicine Catalog Migration (`MedicineMigration.tsx`)**: Standardized drug database indexing and inventory normalization.
 
-### 4. Facility Maintenance & System Compliance
-- **Equipment Management (`EquipmentsDashboard.tsx`)**: Biomedical asset registry, calibration schedules, and maintenance alerts.
-- **Tamper-Evident Audit Logs (`AuditLogs.tsx`)**: Immutable event logging tracking administrative logins, role modifications, and system configuration updates.
-- **Settings & Localization (`SettingsDashboard.tsx`, `WebsiteLanguageSelect.tsx`)**: Multi-lingual interface support (English, Hindi, Tamil, Telugu, Punjabi) and clinic profiling.
+### 4. Hospital Governance & Administrative Command Center
+- **Hospital Headquarters Dashboard (`HospitalDashboard.tsx`)**: Multi-clinic oversight, bed capacity, revenue streams, and emergency flags.
+- **Clinic Administration (`ClinicAdminDashboard.tsx`)**: Branch clinic management and operational metrics.
+- **Super Admin Governance (`SuperAdminDashboard.tsx`)**: Multi-tenant institutional network registry.
+
+### 5. Workforce & Financial Suite
+- **Staff Directory & Shifts (`StaffPortal.tsx`, `ShiftManagement.tsx`)**: Role-based access control (RBAC) and roster scheduling.
+- **Duty Attendance Tracking (`ClinicAttendance.tsx`)**: Daily staff check-in, presence tracking, and duty logs.
+- **CA Financial Suite (`CAFinancialSuite.tsx`, `TaxInvoice.tsx`)**: Chartered Accountant general ledger, trial balance, GST invoices, and earnings analytics.
 
 ---
 
@@ -65,30 +69,24 @@ flowchart TD
 
 | Layer | Technologies |
 | :--- | :--- |
-| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Lucide Icons, Framer Motion, Radix UI |
-| **Backend API** | Hono, TypeScript, Cloudflare Workers / Local Node Runtime |
+| **Frontend** | React 18, Vite, TypeScript (Strict), Tailwind CSS, Lucide Icons, Framer Motion, Radix UI |
+| **Backend API** | Hono Framework, TypeScript, Cloudflare Workers / Local Node Runtime |
 | **Persistence** | Cloudflare D1 (SQLite-compatible edge database), Multi-tenant tenancy layer |
-| **Contracts** | Zod schemas, TypeScript strict mode, OpenAPI specifications |
+| **Contracts** | Zod schemas, TypeScript strict contracts, OpenAPI specifications |
 | **Styling & Design** | Custom Jeevika Healthcare Design System, responsive mobile-first layouts |
 
 ---
 
 ## 💻 Quick Start
 
-### Prerequisites
-- **Node.js**: `>= 20.x`
-- **npm**: `>= 10.x`
-
 ### 1. Start the Local API Server
 ```bash
-# Start the local Hono API & SQLite migrations
 npm run dev:api
 ```
 *API will be listening on `http://127.0.0.1:8790`.*
 
 ### 2. Start the Frontend Website
 ```bash
-# Start Vite development server
 npm run dev
 ```
 *Frontend will be live at `http://localhost:5174/`.*
@@ -102,8 +100,8 @@ npm run build
 
 ## 🗺️ Milestone Roadmap
 
-- [x] **Milestone 1 (Current - 25%)**: Platform foundation, authentication, public marketing portal, and complete hospital administration suite.
-- [ ] **Milestone 2 (+25% -> 50%)**: Clinical care ecosystem (Patient Kiosk with Voice Input, Emergency Triage, Doctor Consultation Workspace with SOAP notes & prescriptions, IPD Inpatients, Pharmacy POS & FEFO Inventory).
+- [x] **Milestone 1 (25%)**: Platform foundation, authentication, public marketing portal, and complete hospital administration suite.
+- [x] **Milestone 2 (+25% -> 50%)**: Clinical care ecosystem (Patient Kiosk with Voice Input, Emergency Triage, Doctor Consultation Workspace with SOAP notes & prescriptions, IPD Inpatients, Pharmacy POS & FEFO Inventory).
 - [ ] **Milestone 3 (Phase 2 -> 100%)**: Cross-platform Flutter Mobile Application, BreathSense VOC cancer detection research, CBC hematology machine learning models, and Vitalis healthspan engine.
 
 ---
