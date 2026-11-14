@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node --import tsx apps/api/server.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p backend/tsconfig.json && npm run check:cbc",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p backend/tsconfig.json && npm run check:cbc && npm run maritime:typecheck",
     "lint": "biome check apps/api apps/web/src packages tests scripts/*.ts",
     "format": "biome check --write apps/api apps/web/src packages tests scripts/*.ts",
     "build": "npm ci --prefix frontend/website --ignore-scripts && npm run typecheck && vite build --config apps/web/vite.config.ts && esbuild apps/api/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/api.mjs",
@@ -32,7 +32,10 @@
     "check:cbc": "tsc --noEmit -p tsconfig.cbc.json",
     "cbc:export": "model-api/.venv/bin/python scripts/export-cbc-model.py",
     "cbc:e2e": "playwright test --config playwright.cbc.config.ts",
-    "cbc:worker:smoke": "node --import tsx scripts/cbc-worker-smoke.ts"
+    "cbc:worker:smoke": "node --import tsx scripts/cbc-worker-smoke.ts",
+    "maritime:build": "npm run build --prefix services/maritime-agent",
+    "maritime:typecheck": "tsc --noEmit -p services/maritime-agent/tsconfig.json",
+    "maritime:container:build": "node services/maritime-agent/build-container.mjs"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

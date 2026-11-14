@@ -1,0 +1,10 @@
+**
+!services/
+!services/maritime-agent/
+!services/maritime-agent/package.json
+!services/maritime-agent/package-lock.json
+!services/maritime-agent/src/
+!services/maritime-agent/src/*.ts
+!packages/
+!packages/shared/
+!packages/shared/maritime-coordination.ts

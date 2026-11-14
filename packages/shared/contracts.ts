@@ -1,5 +1,21 @@
 import { z } from "zod";
 
+export {
+  type CoordinationContext,
+  type CoordinationDraft,
+  type CoordinationEnvelope,
+  type CoordinationResult,
+  coordinationContextSchema,
+  coordinationDiagnosticSchema,
+  coordinationDraftRequestSchema,
+  coordinationDraftSchema,
+  coordinationEnvelopeSchema,
+  coordinationEventAckSchema,
+  coordinationProposalSchema,
+  coordinationResultSchema,
+  maritimeChatInputSchema,
+} from "./maritime-coordination";
+
 export const patientSchema = z.object({
   id: z
     .string()
