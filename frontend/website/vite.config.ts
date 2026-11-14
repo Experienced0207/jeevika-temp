@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { cbcAssets } from "../../scripts/cbc-assets";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -9,7 +10,7 @@ const tailwindcss = require(resolve(__dirname, "node_modules/tailwindcss"));
 const autoprefixer = require(resolve(__dirname, "node_modules/autoprefixer"));
 
 export default defineConfig({
-  plugins: [],
+  plugins: [cbcAssets()],
   root: __dirname,
   css: {
     postcss: {
@@ -35,15 +36,10 @@ export default defineConfig({
     },
   },
   server: {
-    host: "0.0.0.0",
     port: 5174,
     proxy: {
       "/api": "http://127.0.0.1:8790",
       "/healthz": "http://127.0.0.1:8790",
     },
-  },
-  preview: {
-    host: "0.0.0.0",
-    port: 5174,
   },
 });

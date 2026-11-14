@@ -7,7 +7,7 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "dev": "vite",
+    "dev": "node --import tsx apps/api/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p backend/tsconfig.json && npm run check:cbc",
     "lint": "biome check apps/api apps/web/src packages tests scripts/*.ts",
@@ -32,10 +32,7 @@
     "check:cbc": "tsc --noEmit -p tsconfig.cbc.json",
     "cbc:export": "model-api/.venv/bin/python scripts/export-cbc-model.py",
     "cbc:e2e": "playwright test --config playwright.cbc.config.ts",
-    "cbc:worker:smoke": "node --import tsx scripts/cbc-worker-smoke.ts",
-    "dev:web": "vite",
-    "dev:api": "node --import tsx backend/local/server.ts",
-    "dev:all": "npm run build && node --import tsx backend/local/server.ts"
+    "cbc:worker:smoke": "node --import tsx scripts/cbc-worker-smoke.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",

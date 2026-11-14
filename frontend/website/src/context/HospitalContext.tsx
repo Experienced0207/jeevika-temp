@@ -238,10 +238,14 @@ export function HospitalProvider({ children }: { children: ReactNode }) {
             setLoading(false);
         };
 
+        window.addEventListener('jeevika_demo_login', handleDemoLogin);
+        window.addEventListener('jeevika_demo_logout', handleDemoLogout);
         window.addEventListener('ayusetu_demo_login', handleDemoLogin);
         window.addEventListener('ayusetu_demo_logout', handleDemoLogout);
 
         return () => {
+            window.removeEventListener('jeevika_demo_login', handleDemoLogin);
+            window.removeEventListener('jeevika_demo_logout', handleDemoLogout);
             window.removeEventListener('ayusetu_demo_login', handleDemoLogin);
             window.removeEventListener('ayusetu_demo_logout', handleDemoLogout);
         };

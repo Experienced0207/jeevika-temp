@@ -142,7 +142,7 @@ class CloudflareDataService implements DataService {
         records.push(newRecord);
         this.setLocalData(table, records);
 
-        if (table === 'encounters') {
+        if (table === 'encounters' && !data.token && !data.token_number) {
             try {
                 const res = await fetch(`${CLOUDFLARE_API_BASE}/intake/encounter`, {
                     method: 'POST',

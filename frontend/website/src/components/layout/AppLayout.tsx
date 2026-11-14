@@ -1,4 +1,4 @@
-const confirmCbcNavigation = () => true;
+import { confirmCbcNavigation } from "../../features/cbc/navigation";
 import { SymbolIcon } from "@/components/ui/SymbolIcon";
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'

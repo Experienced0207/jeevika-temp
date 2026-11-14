@@ -5,6 +5,7 @@ import { jsPDF } from 'jspdf';
 import { dataService } from '@/lib/dataService';
 import { CLOUDFLARE_API_BASE } from '@/lib/supabase';
 import { getWebsiteLocale, setWebsiteLocale, type WebsiteLocale } from '../../../../packages/i18n/website';
+import { getClinicalRedFlags } from '../../../../packages/engine/clinicalIntake';
 
 export interface PatientKioskProps {
   onTokenGenerated?: (tokenData: any) => void;
@@ -689,6 +690,16 @@ export function PatientKiosk({ onTokenGenerated, onNavigate: _onNavigate }: Pati
       return;
     }
 
+    const redFlags = getClinicalRedFlags(normalizedText);
+    const isAcute = redFlags.length > 0;
+    if (isAcute) {
+      setShowRedFlagBanner(true);
+      setCurrentPatient((previous) => ({
+        ...previous,
+        isEmergency: true,
+      }));
+    }
+
     setTranslationStatus('translating');
     translationTimer.current = setTimeout(async () => {
       const controller = new AbortController();
@@ -1235,7 +1246,7 @@ export function PatientKiosk({ onTokenGenerated, onNavigate: _onNavigate }: Pati
     const intakeTranscript = intakeTurns
       .map(({ question, answer }) => `${question}: ${answer}`)
       .join('\n');
-    const isEmergency = currentPatient.isEmergency || intakeTriage?.tier === 'emergency';
+    const isEmergency = currentPatient.isEmergency || intakeTriage?.tier === 'emergency' || getClinicalRedFlags(chiefComplaint).length > 0;
 
     try {
       const encounterData = {
@@ -1285,6 +1296,26 @@ export function PatientKiosk({ onTokenGenerated, onNavigate: _onNavigate }: Pati
       }
       const tokenStr = result.encounter.token;
       await dataService.create('encounters', { ...encounterData, token: tokenStr, token_number: tokenStr });
+      try {
+        localStorage.setItem('jeevika_latest_token', tokenStr);
+        localStorage.setItem('jeevika_latest_patient_id', encounterData.patient_id);
+        localStorage.setItem('jeevika_latest_encounter', JSON.stringify({
+          token: tokenStr,
+          patientId: encounterData.patient_id,
+          patientName: encounterData.patient_name,
+          isEmergency,
+          chiefComplaint,
+          timestamp: Date.now()
+        }));
+        window.dispatchEvent(new CustomEvent('jeevika:encounter-created', {
+          detail: {
+            token: tokenStr,
+            patientId: encounterData.patient_id,
+            patientName: encounterData.patient_name,
+            isEmergency
+          }
+        }));
+      } catch {}
       setCurrentPatient(prev => ({ ...prev, tokenNumber: tokenStr }));
       setCurrentScreenIndex(4);
       speakText(`Your intake is complete. Your token number is ${tokenStr}.`);

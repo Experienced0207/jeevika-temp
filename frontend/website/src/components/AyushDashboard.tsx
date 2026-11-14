@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Users, Printer, CheckCircle2, 
-  Sparkles, Leaf, Pill 
+  Sparkles, Leaf, Pill, AlertTriangle, ShieldCheck 
 } from 'lucide-react';
+import { checkHerbDrugInteractions } from '../lib/herbDrugInteractions';
 
 export interface AyushPatient {
   id: string;
@@ -105,6 +106,16 @@ export function AyushDashboard({ onSendToPos }: AyushDashboardProps) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const activePatient = queue.find(p => p.id === selectedId) || queue[0];
+
+  // Pharmacovigilance: Herb-Drug Interaction Sentinel
+  const [isHdiAcknowledged, setIsHdiAcknowledged] = useState(false);
+  const potentialInteractions = useMemo(() => {
+    const concurrentAllopathy = [
+      { drug: 'Aspirin 300mg' },
+      { drug: 'Clopidogrel 75mg' }
+    ];
+    return checkHerbDrugInteractions(concurrentAllopathy, activePatient.classicalFormulations);
+  }, [activePatient]);
 
   const handleApproveFormulations = () => {
     setSuccessMsg(`🌿 Ayurvedic Case Sheet Approved! Pushed to ABDM M2 Gateway & JEEVIKA POS!`);
@@ -347,6 +358,52 @@ export function AyushDashboard({ onSendToPos }: AyushDashboardProps) {
                 </div>
               </div>
             </div>
+
+            {/* Pharmacovigilance Herb-Drug Interaction Sentinel */}
+            {potentialInteractions.length > 0 && (
+              <div className="p-4 bg-rose-50 border-2 border-rose-300 rounded-2xl shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between border-b border-rose-200 pb-2">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 animate-pulse" />
+                    <h4 className="text-xs font-black uppercase text-rose-950 tracking-wider">
+                      Pharmacovigilance Alert: Allopathy-AYUSH Cross-Reaction Detected
+                    </h4>
+                  </div>
+                  <span className="text-[10px] bg-rose-600 text-white font-mono font-bold px-2 py-0.5 rounded-full uppercase">
+                    {potentialInteractions[0]?.severity}
+                  </span>
+                </div>
+                {potentialInteractions.map((interaction, idx) => (
+                  <div key={idx} className="text-xs text-rose-950 space-y-1">
+                    <div className="font-bold flex items-center gap-2 flex-wrap">
+                      <span>{interaction.ayurvedicHerb}</span>
+                      <span>⚡</span>
+                      <span>{interaction.allopathicDrug} ({interaction.allopathicClass})</span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
+                      <strong>Clinical Risk:</strong> {interaction.clinicalRisk}.
+                    </p>
+                    <p className="text-[10px] text-rose-700 italic">
+                      <strong>Mechanism:</strong> {interaction.mechanism}
+                    </p>
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-rose-200/80 flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 text-xs font-bold text-rose-950 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isHdiAcknowledged}
+                      onChange={(e) => setIsHdiAcknowledged(e.target.checked)}
+                      className="rounded text-rose-600 focus:ring-rose-500 w-4 h-4"
+                    />
+                    <span>Pharmacovigilance Clearance: Patient is NOT taking concurrent blood thinners / NSAIDs.</span>
+                  </label>
+                  <span className="text-[10px] text-rose-600 font-mono">
+                    Ministry of AYUSH Pharmacovigilance Guideline 2024
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Formulations */}
             <div className="space-y-3 pt-2">

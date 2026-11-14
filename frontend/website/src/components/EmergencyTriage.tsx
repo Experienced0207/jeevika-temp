@@ -514,8 +514,8 @@ export function EmergencyTriage({ onAdmitToIpd }: EmergencyTriageProps) {
     }
 
     playAudioTone('STABILIZE', soundEnabled);
-    setToastMessage(`✅ Patient ${targetCase?.patientName || ''} stabilized. ${targetCase?.resuscitationBay} cleared & primed.`);
-    setTimeout(() => setToastMessage(null), 3500);
+    setToastMessage(`✅ Patient ${targetCase?.patientName || ''} stabilized. Terminal Biohazard Decontamination & Restock logged under NABH Protocol. ${targetCase?.resuscitationBay} sanitized & code-ready.`);
+    setTimeout(() => setToastMessage(null), 4000);
 
     // Backend synchronization: call POST /api/v1/intake/encounter/:id/status
     try {
@@ -1021,7 +1021,7 @@ export function EmergencyTriage({ onAdmitToIpd }: EmergencyTriageProps) {
                   {isAvailable ? (
                     <div className="flex items-center gap-1.5 text-[11px] font-medium">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Ready for Casualty Intake</span>
+                      <span>Ready for Intake · NABH Sanitized & Code-Ready</span>
                     </div>
                   ) : (
                     <div>

@@ -1,4 +1,4 @@
-const confirmCbcNavigation = () => true;
+import { confirmCbcNavigation } from "./features/cbc/navigation";
 import { useState, useEffect, lazy, Suspense, Component, type ErrorInfo, type ReactNode } from 'react'
 
 function lazyWithRetry<T extends React.ComponentType<any>>(

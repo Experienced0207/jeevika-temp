@@ -829,7 +829,7 @@ intakeRouter.post("/encounter", async (c) => {
         isEmergency ? "emergency" : (String(encounter.status).toLowerCase() === "reviewed" ? "reviewed" : "waiting"),
         sequenceNumber,
         encounter.created_at,
-        JSON.stringify(encounter.intake_history || []),
+        JSON.stringify((body as Record<string, unknown>).intake_history || (body as Record<string, unknown>).intakeHistory || []),
         JSON.stringify(encounter.triage?.red_flags || [])
         ),
       ]);

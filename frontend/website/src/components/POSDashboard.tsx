@@ -2,12 +2,13 @@ import { SymbolIcon } from "@/components/ui/SymbolIcon";
 import { useState, useEffect } from 'react'
 import { CardDescription } from '@/components/ui/basic'
 import { Button, Input, Label } from '@/components/ui/basic'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Volume2 } from 'lucide-react'
 import { useToast } from "@/components/ui/use-toast"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { dataService as db } from '@/lib/dataService'
 import { useHospital } from '@/context/HospitalContext'
 import { ReceiptModal } from '@/components/ui/ReceiptModal'
+import { PatientVernacularGuide } from './PatientVernacularGuide'
 
 type POSView = 'pharmacy' | 'consultation' | 'ipd';
 
@@ -29,7 +30,7 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
     const [patientName, setPatientName] = useState('');
     const [patientPhone, setPatientPhone] = useState('');
     const [patientAddress, setPatientAddress] = useState('');
-    const [doctorName, setDoctorName] = useState('');
+    const [doctorName, setDoctorName] = useState('Dr. Divyansh');
     const [paymentMode, setPaymentMode] = useState('Cash');
 
     // Consultation State
@@ -60,6 +61,7 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
 
     // Receipt State
     const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+    const [showVernacularGuide, setShowVernacularGuide] = useState(false);
     const [lastSaleData, setLastSaleData] = useState<any>(null);
     const [lastSaleItems, setLastSaleItems] = useState<any[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -204,10 +206,11 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
         const newCartItems: any[] = [];
         for (const item of items) {
             const itemName = item.name || item.brand || item.salt || 'Medicine';
-            const matchingInventory = clinicInventory.find(i =>
+            const candidateBatches = clinicInventory.filter(i =>
                 i.item_name.toLowerCase().includes(itemName.toLowerCase()) ||
                 (item.salt && i.item_name.toLowerCase().includes(item.salt.toLowerCase()))
-            );
+            ).sort((a, b) => new Date(a.expiry_date || '2099-01-01').getTime() - new Date(b.expiry_date || '2099-01-01').getTime());
+            const matchingInventory = candidateBatches[0];
 
             if (matchingInventory) {
                 const upp = matchingInventory.units_per_pack || 1;
@@ -222,7 +225,9 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                     maxQty: matchingInventory.quantity,
                     unitsPerPack: upp,
                     isLoose,
-                    totalTablets: isLoose ? unitsReq : unitsReq * upp
+                    totalTablets: isLoose ? unitsReq : unitsReq * upp,
+                    batchNumber: matchingInventory.batch_number || 'BAT-FEFO-01',
+                    expiryDate: matchingInventory.expiry_date || '2027-11-30'
                 });
             } else {
                 const pricePerUnit = item.unitPricePaise ? item.unitPricePaise / 100 : (item.price || 15);
@@ -234,7 +239,9 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                     maxQty: 999,
                     unitsPerPack: 1,
                     isLoose: false,
-                    totalTablets: item.units || 1
+                    totalTablets: item.units || 1,
+                    batchNumber: 'BAT-OPD-FEFO',
+                    expiryDate: '2027-12-31'
                 });
             }
         }
@@ -694,10 +701,12 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                 sale_type: 'PHARMACY' 
             };
             setLastSaleData(recordedSale);
-            setLastSaleItems(cart.map(c => ({ 
+            setLastSaleItems(cart.map((c, idx) => ({ 
                 item_name: c.name + (c.isLoose ? ' (Loose)' : ' (Pack)'), 
                 quantity: c.quantity, 
-                price: c.price 
+                price: c.price,
+                batch_number: c.batchNumber || `BAT-FEFO-${String(idx + 1).padStart(2, '0')}`,
+                expiry_date: c.expiryDate || '2027-11-30'
             })));
             setIsReceiptOpen(true);
 
@@ -1418,7 +1427,7 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                                         value={doctorName}
                                         onChange={e => setDoctorName(e.target.value)}
                                     >
-                                        <option value="">Select Prescribing Doctor*</option>
+                                        <option value="Dr. Divyansh">Dr. Divyansh (Chief Medical Officer)</option>
                                         {doctors.map((d: any) => (
                                             <option key={d.id} value={d.full_name}>{d.full_name}</option>
                                         ))}
@@ -1537,6 +1546,17 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                                 )}
                             </div>
 
+                            {cart.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowVernacularGuide(true)}
+                                    className="w-full mb-2.5 py-2 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+                                >
+                                    <Volume2 className="w-4 h-4 text-emerald-700" />
+                                    <span>🔊 मरीज सचित्र खुराक (Audio Schedule)</span>
+                                </button>
+                            )}
+
                             <button 
                                 type="button"
                                 onClick={handleProcessPharmacy} 
@@ -1574,6 +1594,24 @@ export function POSDashboard({ onNavigate, currentClinicId }: { onNavigate?: (vi
                 sale={lastSaleData}
                 items={lastSaleItems}
             />
+
+            {/* Dynamic Patient Vernacular Medication Guide */}
+            {showVernacularGuide && (
+                <PatientVernacularGuide
+                    isOpen={showVernacularGuide}
+                    onClose={() => setShowVernacularGuide(false)}
+                    patientName={patientName || 'मरीज (Patient)'}
+                    patientToken={tokenSearch || 'POS-01'}
+                    prescriptionItems={cart.map(c => ({
+                        drug: c.name,
+                        dosage: '1 tab',
+                        frequency: '1-0-1',
+                        duration: 'As advised',
+                        availableInClinic: true,
+                        instructions: 'After meals with water',
+                    }))}
+                />
+            )}
 
             {/* Custom Qty Entry Modal */}
             <Dialog open={!!promptItem} onOpenChange={(open) => !open && setPromptItem(null)}>

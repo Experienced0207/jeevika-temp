@@ -78,7 +78,7 @@ class CloudflareAuthService implements AuthService {
     async signOut() {
         localStorage.removeItem('ayusetu_demo_session');
         this.setLocalSession(null);
-        window.dispatchEvent(new Event('ayusetu_demo_logout'));
+        window.dispatchEvent(new Event('jeevika_demo_logout'));
     }
 
     onAuthStateChange(callback: (user: any, event?: string) => void) {
