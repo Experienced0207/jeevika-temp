@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { type PruneMetadata, pruneMetadataSchema } from "../shared/contracts";
+import {
+  type PruneMetadata,
+  pruneEgressReceiptSchema,
+} from "../shared/contracts";
 
 export const draftInputSchema = z.strictObject({
   workflow: z.enum(["careops_followup", "clinical_handoff"]),
@@ -70,7 +73,7 @@ export function assertSafeForExternalEgress(
   boundary?: "receipt",
 ) {
   if (boundary === "receipt") {
-    if (!pruneMetadataSchema.safeParse(raw).success)
+    if (!pruneEgressReceiptSchema.safeParse(raw).success)
       throw new BlockedEgressError();
     return;
   }

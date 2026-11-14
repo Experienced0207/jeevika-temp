@@ -2,18 +2,20 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { driftRadar } from "../../../../packages/engine";
-import { demoReadings } from "../../../../packages/shared/demo";
 import {
+  careopsReviewInputSchema,
   driftInputSchema,
   homeVitalsSchema,
 } from "../../../../packages/shared/contracts";
-import { tenantDb, type Database } from "../../database";
+import { demoReadings } from "../../../../packages/shared/demo";
+import { type Database, tenantDb } from "../../database";
 import { careopsRepo } from "../../db/careopsRepo";
+import { careopsReviewRepo, ReviewError } from "../../db/careopsReviewRepo";
 import { tokenHash } from "../../security";
 
 type HomeContext = {
   Bindings: { DB: Database; ENVIRONMENT: string };
-  Variables: { homeOrg: string };
+  Variables: { homeOrg: string; homeActor: { id: string; role: string } };
 };
 export const homeRouter = new Hono<HomeContext>();
 homeRouter.onError((error, c) => {
@@ -22,7 +24,9 @@ homeRouter.onError((error, c) => {
       ? 422
       : error instanceof HTTPException
         ? error.status
-        : 500;
+        : error instanceof ReviewError
+          ? error.status
+          : 500;
   return c.json(
     {
       error: {
@@ -54,21 +58,46 @@ const authenticate: MiddlewareHandler<HomeContext> = async (c, next) => {
     throw new HTTPException(401, { message: "Session required" });
   const user = await tenantDb({ db: c.env.DB, orgId })
     .statement(
-      `SELECT u.role FROM sessions s JOIN users u ON u.org_id=s.org_id AND u.id=s.user_id
+      `SELECT u.id,u.role FROM sessions s JOIN users u ON u.org_id=s.org_id AND u.id=s.user_id
      WHERE s.org_id = :org AND s.token_hash = ? AND s.expires_at > ?`,
       await tokenHash(token),
       new Date().toISOString(),
     )
-    .first<{ role: string }>();
+    .first<{ id: string; role: string }>();
   if (!user)
     throw new HTTPException(401, { message: "Session expired or revoked" });
   if (!["DOCTOR", "NURSE", "HOSPITAL_ADMIN"].includes(user.role))
     throw new HTTPException(403, { message: "Clinical role required" });
   c.set("homeOrg", orgId);
+  c.set("homeActor", user);
   await next();
 };
 homeRouter.use("/vitals", authenticate);
 homeRouter.use("/nurse/queue", authenticate);
+homeRouter.use("/nurse/tasks/*", authenticate);
+
+homeRouter.post("/nurse/tasks/:id/status", async (c) => {
+  if (!["NURSE", "DOCTOR"].includes(c.get("homeActor").role))
+    throw new HTTPException(403, {
+      message: "Nurse or doctor review required",
+    });
+  const id = z.uuid().parse(c.req.param("id"));
+  const body = await c.req.text();
+  if (body.length > 4000)
+    throw new HTTPException(413, { message: "Review request too large" });
+  let raw: unknown;
+  try {
+    raw = JSON.parse(body);
+  } catch {
+    throw new HTTPException(422, { message: "Invalid JSON" });
+  }
+  const input = careopsReviewInputSchema.parse(raw);
+  const result = await careopsReviewRepo({
+    db: c.env.DB,
+    orgId: c.get("homeOrg"),
+  }).decide(id, c.get("homeActor").id, input);
+  return c.json(result);
+});
 
 homeRouter.post("/vitals", async (c) => {
   const text = await c.req.text();

@@ -12,7 +12,9 @@ import {
 } from "./egressSafetyGate";
 
 const completionUrl = "https://api.withprune.com/v1/chat/completions";
-const verificationUrl = "https://api.withprune.com/v1/receipts/verify";
+export const PRUNE_RECEIPT_CAPABILITY = "OFFLINE_MATH_ONLY" as const;
+export const PRUNE_RECEIPT_SOURCE_GAP =
+  "Exact vendor signed-field defaults and a verified vendor fixture are unavailable";
 type VerificationStatus = z.infer<typeof pruneVerificationStatusSchema>;
 export type GuardianAudit = {
   id: string;
@@ -33,9 +35,7 @@ type VerificationOptions = {
   transport?: typeof fetch;
 };
 
-/** Sorted compact JSON. The egress template uses ASCII only, so its encoding
- * also agrees with Python's ensure_ascii request-hash canonicalization.
- */
+/** Local deterministic JSON utility only. Not a verified vendor canonicalizer. */
 export function canonicalPruneJson(value: unknown): string {
   if (value === null || typeof value !== "object")
     return JSON.stringify(value) ?? "null";
@@ -48,9 +48,10 @@ export function canonicalPruneJson(value: unknown): string {
     .join(",")}}`;
 }
 
+/** @deprecated OFFLINE_MATH_ONLY; never use this helper as vendor evidence. */
 export async function pruneRequestHash(request: SafeChatRequest) {
   assertSafeForExternalEgress(request);
-  // Prune canonical request version v1 binds model/messages/tools/system.
+  // Legacy OFFLINE_MATH_ONLY helper; not used to verify vendor receipts.
   const bytes = new TextEncoder().encode(
     canonicalPruneJson({
       model: request.model,
@@ -63,10 +64,6 @@ export async function pruneRequestHash(request: SafeChatRequest) {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
-}
-
-function decodeBase64(value: string) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
 async function boundedJson(response: Response): Promise<unknown> {
@@ -94,82 +91,39 @@ async function boundedJson(response: Response): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(buffer));
 }
 
-/** Metadata presence is not proof. Pin a trusted Ed25519 key or ask the fixed
- * HTTPS verification endpoint; neither path accepts a caller-selected URL/key.
+/** Public docs describe a fixed SIGNED_FIELDS + DEFAULTS contract, not signing
+ * every locally parsed key. Neither that exact spec nor a verified vendor
+ * fixture is available. A pinned key, local signature, mocked API `valid:true`,
+ * or guessed request hash therefore cannot promote a provider receipt.
+ * Official API body is {receipt: object}; knowing that alone does not establish
+ * signed-field coverage or bind the receipt to this completion.
  * https://www.withprune.com/docs/receipts
- * https://api.withprune.com/openapi.json (ReceiptVerifyRequest)
+ * https://www.withprune.com/verify
+ * https://api.withprune.com/openapi.json
  */
 export async function verifyPruneReceipt(
   raw: unknown,
-  expectedHash: string,
-  options: VerificationOptions = {},
+  _expectedHash: string,
+  _options: VerificationOptions = {},
 ): Promise<VerificationStatus> {
-  if (raw === undefined || raw === null) return "MISSING";
-  const parsed = pruneMetadataSchema.safeParse(raw);
-  if (!parsed.success) return "PRESENT_UNVERIFIED";
-  const metadata = parsed.data;
-  if (
-    !metadata.receipt_signature ||
-    !metadata.receipt_signed_at ||
-    metadata.receipt_request_canonical_version !== "v1" ||
-    metadata.receipt_request_sha256 !== expectedHash
-  )
-    return "PRESENT_UNVERIFIED";
+  return raw === undefined || raw === null ? "MISSING" : "PRESENT_UNVERIFIED";
+}
 
-  if (
-    options.publicKeyBase64 &&
-    (!options.signingKeyId ||
-      metadata.receipt_signing_key_id === options.signingKeyId)
-  ) {
-    try {
-      const keyBytes = decodeBase64(options.publicKeyBase64);
-      if (keyBytes.length !== 32) throw new Error("Invalid public key");
-      const key = await crypto.subtle.importKey(
-        "raw",
-        keyBytes,
-        { name: "Ed25519" },
-        false,
-        ["verify"],
-      );
-      const {
-        receipt_signature,
-        receipt_signing_key_id: _keyId,
-        ...signed
-      } = metadata;
-      // signed_at stays signed. If provider defaults/canonicalization differ,
-      // verification fails and the documented hosted verifier is the fallback.
-      const valid = await crypto.subtle.verify(
-        { name: "Ed25519" },
-        key,
-        decodeBase64(receipt_signature),
-        new TextEncoder().encode(canonicalPruneJson(signed)),
-      );
-      if (valid) return "VERIFIED_ED25519";
-    } catch {
-      /* Fail closed; never infer authenticity from a signature field. */
-    }
-  }
-  if (!options.verifyViaApi) return "PRESENT_UNVERIFIED";
-  try {
-    assertSafeForExternalEgress(metadata, "receipt");
-    const response = await (options.transport ?? fetch)(verificationUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Prune-Cache": "off" },
-      body: JSON.stringify({ receipt: metadata }),
-      redirect: "error",
-      cache: "no-store",
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) return "PRESENT_UNVERIFIED";
-    const result = z
-      .object({ valid: z.boolean() })
-      .safeParse(await boundedJson(response));
-    return result.success && result.data.valid === true
-      ? "VERIFIED_API"
-      : "PRESENT_UNVERIFIED";
-  } catch {
-    return "PRESENT_UNVERIFIED";
-  }
+/** Constant-key, boolean-only proof summary. Never retain vendor free text,
+ * routing model labels, unknown extensions, notes, signatures or payloads.
+ */
+export function sanitizedPruneReceiptJson(raw: unknown): string | null {
+  if (raw === undefined || raw === null) return null;
+  const parsed = pruneMetadataSchema.safeParse(raw);
+  return JSON.stringify({
+    receiptPresent: true,
+    cacheHit: parsed.success && parsed.data.cache_hit === true,
+    signaturePresent:
+      parsed.success &&
+      typeof parsed.data.receipt_signature === "string" &&
+      parsed.data.receipt_signature.length > 0,
+    verificationCapability: PRUNE_RECEIPT_CAPABILITY,
+  });
 }
 
 export type GuardianOptions = VerificationOptions & {
@@ -248,7 +202,6 @@ export function pruneGuardian(options: GuardianOptions) {
       let status: VerificationStatus = "MISSING";
       let receiptJson: string | null = null;
       try {
-        const expectedHash = await pruneRequestHash(request);
         // No caller headers/options can override endpoint, cache policy or body.
         assertSafeForExternalEgress(request);
         const response = await (options.transport ?? fetch)(completionUrl, {
@@ -278,10 +231,10 @@ export function pruneGuardian(options: GuardianOptions) {
           })
           .parse(await boundedJson(response));
         const metadata = pruneMetadataSchema.safeParse(body.prune_metadata);
-        receiptJson = metadata.success ? JSON.stringify(metadata.data) : null;
+        receiptJson = sanitizedPruneReceiptJson(body.prune_metadata);
         status = await verifyPruneReceipt(
           body.prune_metadata,
-          expectedHash,
+          "", // No speculative vendor request canonicalization.
           options,
         );
         if (metadata.success && metadata.data.cache_hit === true)

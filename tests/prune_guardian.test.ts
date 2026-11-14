@@ -15,8 +15,10 @@ import { redact, sourceSummary } from "../packages/ai/gateway";
 import {
   canonicalPruneJson,
   type GuardianAudit,
+  PRUNE_RECEIPT_CAPABILITY,
   pruneGuardian,
   pruneRequestHash,
+  sanitizedPruneReceiptJson,
   verifyPruneReceipt,
 } from "../packages/ai/pruneGuardian";
 import { pruneMetadataSchema } from "../packages/shared/contracts";
@@ -183,7 +185,92 @@ describe("Prune positive egress allowlist", () => {
 });
 
 describe("receipt authenticity and safe fallback", () => {
-  it("verifies Ed25519 only with a trusted pinned key and matching request hash", async () => {
+  it("demonstrates local Ed25519 math without asserting vendor compatibility", async () => {
+    const { metadata, publicKey } = await signedReceipt();
+    const decode = (value: string) =>
+      Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      decode(publicKey),
+      "Ed25519",
+      false,
+      ["verify"],
+    );
+    const {
+      receipt_signature,
+      receipt_signing_key_id: _keyId,
+      ...signed
+    } = metadata;
+    expect(
+      await crypto.subtle.verify(
+        "Ed25519",
+        key,
+        decode(receipt_signature),
+        new TextEncoder().encode(canonicalPruneJson(signed)),
+      ),
+    ).toBe(true);
+    expect(
+      await crypto.subtle.verify(
+        "Ed25519",
+        key,
+        decode(receipt_signature),
+        new TextEncoder().encode(
+          canonicalPruneJson({ ...signed, input_tokens: 41 }),
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      await verifyPruneReceipt(metadata, metadata.receipt_request_sha256, {
+        publicKeyBase64: publicKey,
+      }),
+    ).toBe("PRESENT_UNVERIFIED");
+  });
+
+  it("accepts evolving ingress but stores only a bounded boolean audit", async () => {
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new Error("verifier failure"));
+    for (const metadata of [
+      {
+        model: "vendor/new-routing-model",
+        routed_model: "provider/model-v9",
+        receipt_request_canonical_version: "v9",
+      },
+      {
+        receipt_signature: null,
+        receipt_signed_at: null,
+        receipt_signing_key_id: null,
+      },
+      {
+        receipt_signature: "invalid signature",
+        receipt_signing_key_id: "rotated-key-2026",
+      },
+      {
+        model: "Synthetic Name",
+        patient_name: "Synthetic Name",
+        phone: "9876543210",
+        measurement: "180 mmHg",
+        unknown: { note: "Synthetic private clinical note" },
+      },
+    ]) {
+      expect(pruneMetadataSchema.safeParse(metadata).success).toBe(true);
+      expect(
+        await verifyPruneReceipt(metadata, "unproven-hash", {
+          verifyViaApi: true,
+          transport,
+        }),
+      ).toBe("PRESENT_UNVERIFIED");
+      const stored = sanitizedPruneReceiptJson(metadata);
+      expect(stored?.length).toBeLessThan(256);
+      expect(stored).not.toMatch(
+        /Synthetic Name|9876543210|mmHg|private clinical|model-v9|rotated-key/,
+      );
+    }
+    expect(PRUNE_RECEIPT_CAPABILITY).toBe("OFFLINE_MATH_ONLY");
+    expect(transport).not.toHaveBeenCalled();
+  });
+
+  it("does not promote local mathematical signatures to vendor proof", async () => {
     const { metadata, publicKey } = await signedReceipt();
     const options = { publicKeyBase64: publicKey, signingKeyId: "aabbccdd" };
     expect(
@@ -192,7 +279,7 @@ describe("receipt authenticity and safe fallback", () => {
         metadata.receipt_request_sha256,
         options,
       ),
-    ).toBe("VERIFIED_ED25519");
+    ).toBe("PRESENT_UNVERIFIED");
     expect(
       await verifyPruneReceipt(
         { ...metadata, input_tokens: 41 },
@@ -223,7 +310,7 @@ describe("receipt authenticity and safe fallback", () => {
       }),
     ).toBe("PRESENT_UNVERIFIED");
   });
-  it("distinguishes valid API confirmation from metadata presence and missing receipts", async () => {
+  it("does not call an API verifier until the complete vendor contract is proven", async () => {
     const { metadata } = await signedReceipt();
     const transport = vi
       .fn<typeof fetch>()
@@ -233,13 +320,8 @@ describe("receipt authenticity and safe fallback", () => {
         verifyViaApi: true,
         transport,
       }),
-    ).toBe("VERIFIED_API");
-    expect(transport.mock.calls[0]?.[0]).toBe(
-      "https://api.withprune.com/v1/receipts/verify",
-    );
-    expect(JSON.parse(String(transport.mock.calls[0]?.[1]?.body))).toEqual({
-      receipt: metadata,
-    });
+    ).toBe("PRESENT_UNVERIFIED");
+    expect(transport).not.toHaveBeenCalled();
     expect(
       await verifyPruneReceipt(metadata, metadata.receipt_request_sha256),
     ).toBe("PRESENT_UNVERIFIED");
@@ -283,9 +365,12 @@ describe("receipt authenticity and safe fallback", () => {
     expect(transport).not.toHaveBeenCalled();
     expect(
       pruneMetadataSchema.safeParse({ ...metadata, value: 180 }).success,
-    ).toBe(false);
+    ).toBe(true);
+    expect(() =>
+      assertSafeForExternalEgress({ ...metadata, value: 180 }, "receipt"),
+    ).toThrow("BLOCKED_EGRESS_GATE");
   });
-  it("returns a provider draft only after verification and successful audit persistence", async () => {
+  it("returns a safe draft while vendor verification remains unsupported", async () => {
     const { metadata, publicKey } = await signedReceipt();
     const log = auditLog();
     const transport = vi
@@ -299,17 +384,17 @@ describe("receipt authenticity and safe fallback", () => {
       audit: log.audit,
     }).draft(selector);
     expect(result).toMatchObject({
-      provider: "prune",
-      receiptStatus: "VERIFIED_ED25519",
+      provider: "local-template",
+      receiptStatus: "PRESENT_UNVERIFIED",
       auditPersisted: true,
       requiresClinicianReview: true,
     });
     expect(log.events.at(-1)).toMatchObject({
-      eventType: "COMPLETED",
-      receiptStatus: "VERIFIED_ED25519",
+      eventType: "UPSTREAM_FAILED",
+      receiptStatus: "PRESENT_UNVERIFIED",
     });
   });
-  it("refuses cache hits even when the receipt verifies", async () => {
+  it("refuses cache hits and never attempts speculative verification", async () => {
     const { metadata } = await signedReceipt();
     const transport = vi
       .fn<typeof fetch>()
@@ -325,7 +410,7 @@ describe("receipt authenticity and safe fallback", () => {
     expect(result).toMatchObject({
       provider: "local-template",
       reason: "SAFE_FALLBACK",
-      receiptStatus: "VERIFIED_API",
+      receiptStatus: "PRESENT_UNVERIFIED",
     });
   });
   it("falls back without a call when disabled, unconfigured, or unable to audit", async () => {
@@ -408,7 +493,7 @@ async function setup() {
   return { db, session, integration };
 }
 describe("authenticated tenant-scoped AI routes", () => {
-  it("verifies and audits enabled drafts through the actual Worker without exposing credentials", async () => {
+  it("keeps enabled Worker drafts unverified without exposing credentials", async () => {
     const { db, session } = await setup();
     const { metadata } = await signedReceipt();
     const transport = vi
@@ -433,12 +518,12 @@ describe("authenticated tenant-scoped AI routes", () => {
     expect(response.status).toBe(200);
     const result = await response.json();
     expect(result).toMatchObject({
-      provider: "prune",
-      receiptStatus: "VERIFIED_API",
+      provider: "local-template",
+      receiptStatus: "PRESENT_UNVERIFIED",
       auditPersisted: true,
     });
     expect(JSON.stringify(result)).not.toContain("test-only-prune-key");
-    expect(transport).toHaveBeenCalledTimes(2);
+    expect(transport).toHaveBeenCalledTimes(1);
     for (const [, options] of transport.mock.calls)
       expect(new Headers(options?.headers).get("X-Prune-Cache")).toBe("off");
     expect(
@@ -448,8 +533,8 @@ describe("authenticated tenant-scoped AI routes", () => {
         )
         .get(),
     ).toMatchObject({
-      event_type: "COMPLETED",
-      receipt_status: "VERIFIED_API",
+      event_type: "UPSTREAM_FAILED",
+      receipt_status: "PRESENT_UNVERIFIED",
     });
   });
   it("audits PHI blocks without fetch and exposes usage only to the owning tenant", async () => {

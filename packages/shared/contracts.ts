@@ -110,6 +110,19 @@ export const careopsTaskSchema = z.strictObject({
   updatedAt: z.iso.datetime(),
 });
 export type CareopsTask = z.infer<typeof careopsTaskSchema>;
+export const careopsReviewInputSchema = z.strictObject({
+  action: z.enum(["approve", "reject", "complete"]),
+  note: z.string().trim().max(500).default(""),
+});
+export const careopsReviewResultSchema = z.strictObject({
+  id: z.uuid(),
+  taskId: z.uuid(),
+  action: careopsReviewInputSchema.shape.action,
+  actorId: z.string().min(1).max(80),
+  fromStatus: careopsTaskStatusSchema,
+  toStatus: careopsTaskStatusSchema,
+  reviewedAt: z.iso.datetime(),
+});
 export const careopsEventSchema = z.strictObject({
   id: z.uuid(),
   taskId: z.uuid(),
@@ -125,6 +138,7 @@ export const careopsTriggerSchema = z.strictObject({
   schemaVersion: z.literal(1),
   triggerId: z.uuid(),
 });
+/** CareOps trigger policy decision. NOT vendor signature verification proof. */
 export const pruneReceiptSchema = z.strictObject({
   schemaVersion: z.literal(1),
   receiptId: z.uuid(),
@@ -147,6 +161,7 @@ export const maritimeCallbackSchema = z.strictObject({
   occurredAt: z.iso.datetime(),
 });
 export type PruneReceipt = z.infer<typeof pruneReceiptSchema>;
+export const careopsPrunePolicyReceiptSchema = pruneReceiptSchema;
 export type MaritimeWebhook = z.infer<typeof maritimeWebhookSchema>;
 export type MaritimeCallback = z.infer<typeof maritimeCallbackSchema>;
 
@@ -163,7 +178,7 @@ export const pruneVerificationStatusSchema = z.enum([
 const pruneModelSchema = z.enum(["gpt-4o-mini", "gpt-4o"]);
 const pruneCounterSchema = z.number().int().nonnegative().max(10000000);
 const pruneCostSchema = z.number().finite().nonnegative().max(1000000);
-export const pruneMetadataSchema = z.strictObject({
+export const pruneEgressReceiptSchema = z.strictObject({
   cache_hit: z.boolean().optional(),
   cache_type: z
     .enum(["off", "none", "miss", "exact", "normalized", "semantic"])
@@ -203,7 +218,20 @@ export const pruneMetadataSchema = z.strictObject({
     .regex(/^[a-f0-9]{8,64}$/)
     .optional(),
 });
-export type PruneMetadata = z.infer<typeof pruneMetadataSchema>;
+// Ingress is deliberately tolerant of vendor evolution. This schema MUST NOT
+// be used as an egress/storage allowlist: unknown/model fields may contain PHI.
+export const pruneMetadataSchema = z.looseObject({
+  cache_hit: z.boolean().nullish(),
+  model: z.string().max(200).nullish(),
+  original_model: z.string().max(200).nullish(),
+  routed_model: z.string().max(200).nullish(),
+  receipt_signature: z.string().max(1024).nullish(),
+  receipt_request_sha256: z.string().max(128).nullish(),
+  receipt_request_canonical_version: z.string().max(32).nullish(),
+  receipt_signed_at: z.string().max(100).nullish(),
+  receipt_signing_key_id: z.string().max(200).nullish(),
+});
+export type PruneMetadata = z.infer<typeof pruneEgressReceiptSchema>;
 
 export const homeVitalsSchema = z
   .strictObject({

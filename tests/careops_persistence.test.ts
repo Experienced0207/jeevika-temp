@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { z } from "zod";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { LocalDatabase } from "../backend/local/database";
 import { migrateLocal, migrationScripts } from "../backend/local/migrate";
 import { seedDemo } from "../backend/local/seed";
@@ -13,7 +13,6 @@ import { app as workerApp } from "../backend/src/index";
 import { homeRouter } from "../backend/src/modules/home/routes";
 import { tokenHash } from "../backend/src/security";
 import { driftRadar } from "../packages/engine";
-import { demoReadings } from "../packages/shared/demo";
 import {
   careopsTaskSchema,
   careopsTriggerSchema,
@@ -21,6 +20,7 @@ import {
   maritimeWebhookSchema,
   pruneReceiptSchema,
 } from "../packages/shared/contracts";
+import { demoReadings } from "../packages/shared/demo";
 
 let directory: string;
 let db: LocalDatabase;
@@ -113,7 +113,7 @@ describe("canonical CareOps persistence", () => {
   it("registers 0007 in both runners and applies the schema and seed repeatedly", () => {
     expect(
       readFileSync("scripts/prepare-integration-migrations.ts", "utf8"),
-    ).toContain('"0007_careops_prune_maritime.sql"');
+    ).toContain('"backend/migrations/0007_careops_prune_maritime.sql"');
     expect(migrationScripts().join("\n")).toContain(
       "CREATE TABLE IF NOT EXISTS maritime_handoffs",
     );

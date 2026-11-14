@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename } from "node:path";
+import { integrationMigrationFiles } from "../../scripts/prepare-integration-migrations";
 import type { LocalDatabase } from "./database";
 
 /** Split our SQLite migration scripts while retaining complete trigger bodies. */
@@ -64,66 +65,89 @@ export function splitSqlScript(sql: string): string[] {
   return statements;
 }
 export function migrationScripts() {
-  return [
-    "0001_intake.sql",
-    "0002_pharmacy.sql",
-    "0002_ayusetu_her.sql",
-    "0003_ayusetu_vitalis.sql",
-    "0005_clinic_token_sequences.sql",
-    "0007_careops_prune_maritime.sql",
-    "0008_prune_audit_receipts.sql",
-  ]
-    .map((name) => {
-      try {
-        return readFileSync(join("backend/migrations", name), "utf8");
-      } catch {
-        return "";
-      }
-    })
-    .filter(Boolean)
-    .concat(readFileSync("backend/cbc-migrations/0006_cbc.sql", "utf8"));
+  // Missing files are fatal, never silently omit a migration.
+  return integrationMigrationFiles.map((path) => readFileSync(path, "utf8"));
 }
-export function migrateLocal(db: LocalDatabase) {
-  // Current scripts are additive/idempotent. Keep the schema files in order.
-  for (const script of migrationScripts()) {
-    try {
-      db.raw.exec(script);
-    } catch {
-      for (const statement of splitSqlScript(script)) {
+
+const legacyColumns: Record<
+  string,
+  { type: string; defaultValue: string | null }
+> = {
+  "encounters.tier": { type: "INTEGER", defaultValue: "0" },
+  "encounters.token_number": { type: "INTEGER", defaultValue: null },
+  "patients.phone_hash": { type: "TEXT", defaultValue: null },
+  "patients.dob": { type: "TEXT", defaultValue: null },
+  "patients.sex": { type: "TEXT", defaultValue: null },
+  "patients.preferred_lang": { type: "TEXT", defaultValue: null },
+  "patients.abha_number": { type: "TEXT", defaultValue: null },
+  "patients.abha_address": { type: "TEXT", defaultValue: null },
+};
+
+function alreadyAppliedLegacyColumn(db: LocalDatabase, sql: string) {
+  const match =
+    /^ALTER TABLE (patients|encounters) ADD COLUMN ([a-z_]+) (TEXT|INTEGER)( DEFAULT 0)?;$/i.exec(
+      sql.trim().replace(/^(?:--[^\n]*\n\s*)+/, ""),
+    );
+  if (!match) return false;
+  const [, table, column] = match;
+  const expected = legacyColumns[`${table}.${column}`];
+  if (!expected) return false;
+  if (
+    match[3]?.toUpperCase() !== expected.type ||
+    (match[4] ? "0" : null) !== expected.defaultValue
+  )
+    return false;
+  const rows = db.raw.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: string | null;
+  }>;
+  const existing = rows.find((row) => row.name === column);
+  if (!existing) return false;
+  if (
+    existing.type.toUpperCase() !== expected.type ||
+    existing.notnull !== 0 ||
+    existing.dflt_value !== expected.defaultValue
+  )
+    throw new Error(`Incompatible legacy column ${table}.${column}`);
+  return true;
+}
+
+export function migrateLocal(db: LocalDatabase, scripts = migrationScripts()) {
+  db.raw.exec("BEGIN IMMEDIATE");
+  try {
+    for (const [migrationIndex, script] of scripts.entries()) {
+      const name = basename(
+        integrationMigrationFiles[migrationIndex] ?? "unknown-migration",
+      );
+      for (const [statementIndex, sql] of splitSqlScript(script).entries()) {
+        // Only 0009 promotes the exact eight columns previously added by the
+        // local adapter. Introspection skips a documented, schema-checked legacy
+        // duplicate; every other SQL/read/constraint error remains fatal.
+        if (
+          name === "0009_careops_reviews.sql" &&
+          alreadyAppliedLegacyColumn(db, sql)
+        )
+          continue;
         try {
-          db.raw.exec(statement);
-        } catch {}
+          db.raw.exec(sql);
+        } catch (cause) {
+          throw new Error(
+            `Migration ${name} statement ${statementIndex + 1} failed`,
+            { cause },
+          );
+        }
       }
     }
+    db.raw.exec(`INSERT OR IGNORE INTO clinics (org_id,id,name) VALUES
+      ('org-jeevika-primary','clinic-delhi-01','JEEVIKA Primary Health Centre'),
+      ('org-jeevika-primary','clinic-delhi-02','JEEVIKA Urban Clinic'),
+      ('org-jeevika-primary','north','North Clinic'),
+      ('org-jeevika-primary','east','East Clinic');`);
+    db.raw.exec("COMMIT");
+  } catch (error) {
+    db.raw.exec("ROLLBACK");
+    throw error;
   }
-
-  // Ensure clinic_token_sequences table and required columns always exist
-  try {
-    db.raw.exec(`
-      CREATE TABLE IF NOT EXISTS clinic_token_sequences (
-        org_id TEXT NOT NULL,
-        clinic_id TEXT NOT NULL,
-        service_date TEXT NOT NULL,
-        last_value INTEGER NOT NULL CHECK (last_value > 0),
-        PRIMARY KEY (org_id, clinic_id, service_date)
-      );
-    `);
-  } catch {}
-  try { db.raw.exec("ALTER TABLE encounters ADD COLUMN tier INTEGER DEFAULT 0;"); } catch {}
-  try { db.raw.exec("ALTER TABLE encounters ADD COLUMN token_number INTEGER;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN phone_hash TEXT;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN dob TEXT;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN sex TEXT;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN preferred_lang TEXT;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN abha_number TEXT;"); } catch {}
-  try { db.raw.exec("ALTER TABLE patients ADD COLUMN abha_address TEXT;"); } catch {}
-  try {
-    db.raw.exec(`
-      INSERT OR IGNORE INTO clinics (org_id, id, name) VALUES 
-        ('org-jeevika-primary', 'clinic-delhi-01', 'JEEVIKA Primary Health Centre'),
-        ('org-jeevika-primary', 'clinic-delhi-02', 'JEEVIKA Urban Clinic'),
-        ('org-jeevika-primary', 'north', 'North Clinic'),
-        ('org-jeevika-primary', 'east', 'East Clinic');
-    `);
-  } catch {}
 }
